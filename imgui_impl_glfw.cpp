@@ -933,6 +933,11 @@ static void ImGui_ImplGlfw_UpdateMouseData()
 
     ImGuiID mouse_viewport_id = 0;
     const ImVec2 mouse_pos_prev = io.MousePos;
+#if defined(_WIN32) && (GLFW_HAS_MOUSE_PASSTHROUGH || GLFW_HAS_WINDOW_HOVERED)
+    // [SAUCE FORK] The one window the cursor is over, found once per frame.
+    POINT cursor_screen_pos;
+    const HWND hwnd_under_cursor = ::GetCursorPos(&cursor_screen_pos) ? ::WindowFromPoint(cursor_screen_pos) : nullptr;
+#endif
     for (int n = 0; n < platform_io.Viewports.Size; n++)
     {
         ImGuiViewport* viewport = platform_io.Viewports[n];
@@ -983,13 +988,24 @@ static void ImGui_ImplGlfw_UpdateMouseData()
 #if GLFW_HAS_MOUSE_PASSTHROUGH
         {
         SAUCE_PROFILE_ZONE_N("Render.ImGuiGlfwPassthrough"); // [SAUCE FORK] measuring the per-viewport attribute write
+        // [SAUCE FORK] Write only on a change. GLFW's setter makes the platform
+        // call (a window-style write on Win32, ~25 us per viewport) every time;
+        // its getter reads the value GLFW cached at the last set.
         const bool window_no_input = (viewport->Flags & ImGuiViewportFlags_NoInputs) != 0;
-        glfwSetWindowAttrib(window, GLFW_MOUSE_PASSTHROUGH, window_no_input);
+        if ((glfwGetWindowAttrib(window, GLFW_MOUSE_PASSTHROUGH) != 0) != window_no_input)
+            glfwSetWindowAttrib(window, GLFW_MOUSE_PASSTHROUGH, window_no_input);
         }
 #endif
 #if GLFW_HAS_MOUSE_PASSTHROUGH || GLFW_HAS_WINDOW_HOVERED
         SAUCE_PROFILE_ZONE_N("Render.ImGuiGlfwHovered"); // [SAUCE FORK] measuring the per-viewport hover query
+#ifdef _WIN32
+        // [SAUCE FORK] GLFW's Win32 hover test starts with WindowFromPoint(cursor)
+        // == this window, so only the window under the cursor can pass it: ask
+        // GLFW about that one viewport, not every one (see hwnd_under_cursor).
+        if ((HWND)viewport->PlatformHandleRaw == hwnd_under_cursor && glfwGetWindowAttrib(window, GLFW_HOVERED))
+#else
         if (glfwGetWindowAttrib(window, GLFW_HOVERED))
+#endif
             mouse_viewport_id = viewport->ID;
 #else
         // We cannot use bd->MouseWindow maintained from CursorEnter/Leave callbacks, because it is locked to the window capturing mouse.
