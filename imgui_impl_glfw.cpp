@@ -112,6 +112,7 @@
 #include "imgui.h"
 #ifndef IMGUI_DISABLE
 #include "imgui_impl_glfw.h"
+#include "Core/Profiling.h" // [SAUCE FORK] SAUCE_PROFILE_* zones in NewFrame; the backend compiles inside sauce-engine
 
 // Clang warnings with -Weverything
 #if defined(__clang__)
@@ -980,10 +981,14 @@ static void ImGui_ImplGlfw_UpdateMouseData()
         // FIXME: This is currently only correct on Win32. See what we do below with the WM_NCHITTEST, missing an equivalent for other systems.
         // See https://github.com/glfw/glfw/issues/1236 if you want to help in making this a GLFW feature.
 #if GLFW_HAS_MOUSE_PASSTHROUGH
+        {
+        SAUCE_PROFILE_ZONE_N("Render.ImGuiGlfwPassthrough"); // [SAUCE FORK] measuring the per-viewport attribute write
         const bool window_no_input = (viewport->Flags & ImGuiViewportFlags_NoInputs) != 0;
         glfwSetWindowAttrib(window, GLFW_MOUSE_PASSTHROUGH, window_no_input);
+        }
 #endif
 #if GLFW_HAS_MOUSE_PASSTHROUGH || GLFW_HAS_WINDOW_HOVERED
+        SAUCE_PROFILE_ZONE_N("Render.ImGuiGlfwHovered"); // [SAUCE FORK] measuring the per-viewport hover query
         if (glfwGetWindowAttrib(window, GLFW_HOVERED))
             mouse_viewport_id = viewport->ID;
 #else
@@ -1196,7 +1201,10 @@ void ImGui_ImplGlfw_NewFrame()
     IM_ASSERT(bd != nullptr && "Context or backend not initialized! Did you call ImGui_ImplGlfw_InitForXXX()?");
 
     // Setup main viewport size (every frame to accommodate for window resizing)
-    ImGui_ImplGlfw_GetWindowSizeAndFramebufferScale(bd->Window, &io.DisplaySize, &io.DisplayFramebufferScale);
+    {
+        SAUCE_PROFILE_ZONE_N("Render.ImGuiGlfwWindowSize"); // [SAUCE FORK]
+        ImGui_ImplGlfw_GetWindowSizeAndFramebufferScale(bd->Window, &io.DisplaySize, &io.DisplayFramebufferScale);
+    }
     if (bd->WantUpdateMonitors) // [SAUCE FORK] re-poll only when MonitorCallback flagged a change, not every frame (EnumDisplaySettingsW is ~0.4ms on Windows)
         ImGui_ImplGlfw_UpdateMonitors();
 
@@ -1209,8 +1217,14 @@ void ImGui_ImplGlfw_NewFrame()
     bd->Time = current_time;
 
     bd->MouseIgnoreButtonUp = false;
-    ImGui_ImplGlfw_UpdateMouseData();
-    ImGui_ImplGlfw_UpdateMouseCursor();
+    {
+        SAUCE_PROFILE_ZONE_N("Render.ImGuiGlfwMouseData"); // [SAUCE FORK]
+        ImGui_ImplGlfw_UpdateMouseData();
+    }
+    {
+        SAUCE_PROFILE_ZONE_N("Render.ImGuiGlfwMouseCursor"); // [SAUCE FORK]
+        ImGui_ImplGlfw_UpdateMouseCursor();
+    }
 
     // Update game controllers (if enabled and available)
     ImGui_ImplGlfw_UpdateGamepads();
